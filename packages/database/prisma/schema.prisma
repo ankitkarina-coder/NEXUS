@@ -1,0 +1,567 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ExecutionType {
+  BOT
+  BOT_HUMAN_CONFIRMATION
+  HUMAN
+}
+
+enum MessageMedium {
+  EMAIL
+  WHATSAPP
+  LINKEDIN
+}
+
+enum ComposeMode {
+  MANUAL
+  TEMPLATE
+}
+
+enum TaskStatus {
+  BACKLOG
+  PENDING
+  IN_PROGRESS
+  COMPLETE
+  FAILED
+}
+
+enum ParticipantType {
+  INTERNAL_USER
+  ORGANIZATION_USER
+}
+
+enum ParticipantRole {
+  ASSIGNEE
+  CREATOR
+  CUSTOMER_PARTICIPANT
+  RECIPIENT
+  OTHER
+}
+
+enum WorkflowStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETE
+  FAILED
+  CANCELLED
+}
+
+enum WorkflowStepStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETE
+  FAILED
+}
+
+enum OutcomeKind {
+  SUCCESS
+  FAILURE
+}
+
+enum OutcomeAction {
+  GOTO_STEP
+  COMPLETE_WORKFLOW
+  FAIL_WORKFLOW
+  TRIGGER_WORKFLOW
+  CHANGE_TASK_STATUS
+}
+
+enum WorkflowTriggerType {
+  ORGANIZATION_STATUS_CHANGED
+  CONTRACT_EVENT
+  PORTAL_ACCESS_EVENT
+  EVENT_PARTICIPATION
+}
+
+enum PortalAccessStatus {
+  NOT_INVITED
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
+model Organization {
+  id                     String                      @id @default(uuid()) @db.Uuid
+  name                   String
+  website                String?
+  description            String?
+  status                 String                      @default("PROSPECT")
+  address                String?
+  countryOfIncorporation String?
+  yearIncorporated       Int?
+  registrationNumber     String?
+  nessCustomerId         String?
+  folderUrl              String?
+  comments               String?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  users                  User[]
+  internalUsers          InternalUser[]
+  tasks                  Task[]
+  workflows              Workflow[]
+  statusHistory          OrganizationStatusHistory[]
+  triggers               WorkflowTrigger[]
+
+  @@index([status])
+  @@map("organizations")
+}
+
+model User {
+  id                 String             @id @default(uuid()) @db.Uuid
+  organizationId     String?            @db.Uuid
+  firstName          String
+  lastName           String
+  email              String             @unique
+  phone              String?
+  linkedinUrl        String?
+  photoUrl           String?
+  role               String?
+  comments           String?
+  portalAccessStatus PortalAccessStatus @default(NOT_INVITED)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  organization       Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  taskParticipants   TaskParticipant[]
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+model InternalUser {
+  id                    String                      @id @default(uuid()) @db.Uuid
+  organizationId        String?                     @db.Uuid
+  firstName             String
+  lastName              String
+  email                 String                      @unique
+  passwordHash          String?
+  active                Boolean                     @default(true)
+  lastLoginAt           DateTime?
+  disabledAt            DateTime?
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  createdTasks          Task[]                      @relation("TaskCreator")
+  assignedTasks         Task[]                      @relation("TaskAssignee")
+  taskComments          TaskComment[]
+  taskParticipants      TaskParticipant[]
+  createdWorkflows      Workflow[]                  @relation("WorkflowCreator")
+  createdTemplates      WorkflowTemplate[]          @relation("WorkflowTemplateCreator")
+  taskStatusChanges     TaskStatusHistory[]
+  workflowStatusChanges WorkflowStatusHistory[]
+  organizationChanges   OrganizationStatusHistory[]
+  taskTemplateAssignees TaskTemplate[]             @relation("TaskTemplateDefaultAssignee")
+  organization           Organization?               @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  sessions               AuthSession[]
+  roleAssignments        InternalUserRole[]
+  auditLogs              AuditLog[]
+
+  @@index([organizationId])
+  @@map("internal_users")
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique
+  description String?
+  protected   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  assignments InternalUserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique
+  description String?
+  createdAt   DateTime         @default(now())
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model InternalUserRole {
+  userId     String       @db.Uuid
+  roleId     String       @db.Uuid
+  assignedAt DateTime     @default(now())
+  user       InternalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("internal_user_roles")
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model AuthSession {
+  id         String       @id @default(uuid()) @db.Uuid
+  tokenHash  String       @unique
+  userId     String       @db.Uuid
+  expiresAt  DateTime
+  lastSeenAt DateTime      @default(now())
+  createdAt  DateTime      @default(now())
+  user       InternalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("auth_sessions")
+}
+
+model AuditLog {
+  id         String       @id @default(uuid()) @db.Uuid
+  actorId    String?      @db.Uuid
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+  actor      InternalUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model TaskTemplate {
+  id                            String                 @id @default(uuid()) @db.Uuid
+  categoryName                  String
+  description                   String?
+  executionType                 ExecutionType
+  defaultAssigneeType           String?
+  defaultAssigneeId             String?                @db.Uuid
+  selfAssigned                  Boolean                @default(false)
+  availableForTasks             Boolean                @default(true)
+  availableForWorkflows         Boolean                @default(false)
+  defaultSlaBusinessDays        Int?
+  statusChangeByAssignee        Boolean                @default(false)
+  statusChangeByAssigner        Boolean                @default(false)
+  completionDescriptionRequired Boolean                @default(false)
+  specificDataFieldsRequired    Boolean                @default(false)
+  autoCompleteAfterBotAction    Boolean                @default(false)
+  active                        Boolean                @default(true)
+  createdAt                     DateTime               @default(now())
+  updatedAt                     DateTime               @updatedAt
+  message                       TaskTemplateMessage?
+  condition                     TaskTemplateCondition?
+  tasks                         Task[]
+  workflowSteps                 WorkflowTemplateStep[]
+  defaultAssignee               InternalUser?          @relation("TaskTemplateDefaultAssignee", fields: [defaultAssigneeId], references: [id], onDelete: SetNull)
+
+  @@index([executionType])
+  @@map("task_templates")
+}
+
+model TaskTemplateMessage {
+  id                       String        @id @default(uuid()) @db.Uuid
+  taskTemplateId           String        @unique @db.Uuid
+  enabled                  Boolean       @default(false)
+  medium                   MessageMedium
+  recipientConfiguration   String?
+  ccConfiguration          String?
+  accountConfiguration     String?
+  composeMode              ComposeMode
+  messageTemplateReference String?
+  emailSubjectTitle        String?
+  messageTemplateId        String?       @db.Uuid
+  taskTemplate             TaskTemplate  @relation(fields: [taskTemplateId], references: [id], onDelete: Cascade)
+  messageTemplate          MessageTemplate? @relation(fields: [messageTemplateId], references: [id], onDelete: SetNull)
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+
+  @@map("task_template_messages")
+}
+
+model MessageTemplate {
+  id          String                 @id @default(uuid()) @db.Uuid
+  name        String
+  content     String?
+  active      Boolean                @default(true)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  taskMessages TaskTemplateMessage[]
+
+  @@map("message_templates")
+}
+
+model TaskTemplateCondition {
+  id                            String                      @id @default(uuid()) @db.Uuid
+  taskTemplateId                String                      @unique @db.Uuid
+  completionDescriptionRequired Boolean                     @default(false)
+  taskTemplate                  TaskTemplate                @relation(fields: [taskTemplateId], references: [id], onDelete: Cascade)
+  requiredFields                TaskTemplateRequiredField[]
+  createdAt                     DateTime                    @default(now())
+  updatedAt                     DateTime                    @updatedAt
+
+  @@map("task_template_conditions")
+}
+
+model TaskTemplateRequiredField {
+  id          String                @id @default(uuid()) @db.Uuid
+  conditionId String                @db.Uuid
+  entity      String
+  fieldName   String
+  required    Boolean               @default(true)
+  condition   TaskTemplateCondition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
+  taskData    TaskRequiredData[]
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@unique([conditionId, entity, fieldName])
+  @@map("task_template_required_fields")
+}
+
+model Task {
+  id                String                @id @default(uuid()) @db.Uuid
+  taskTemplateId    String                @db.Uuid
+  title             String
+  description       String?
+  organizationId    String?               @db.Uuid
+  creatorId         String?               @db.Uuid
+  assigneeId        String?               @db.Uuid
+  status            TaskStatus            @default(BACKLOG)
+  createdAt         DateTime              @default(now())
+  dueAt             DateTime?
+  reminderAt        DateTime?
+  executionAt       DateTime?
+  completedAt       DateTime?
+  completionComment String?
+  updatedAt         DateTime              @updatedAt
+  taskTemplate      TaskTemplate          @relation(fields: [taskTemplateId], references: [id], onDelete: Restrict)
+  organization      Organization?         @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  creator           InternalUser?         @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+  assignee          InternalUser?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  participants      TaskParticipant[]
+  comments          TaskComment[]
+  requiredData      TaskRequiredData[]
+  statusHistory     TaskStatusHistory[]
+  workflowStep      WorkflowStepInstance?
+
+  @@index([status])
+  @@index([organizationId])
+  @@map("tasks")
+}
+
+model TaskParticipant {
+  id                 String          @id @default(uuid()) @db.Uuid
+  taskId             String          @db.Uuid
+  participantType    ParticipantType
+  role               ParticipantRole
+  internalUserId     String?         @db.Uuid
+  organizationUserId String?         @db.Uuid
+  task               Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  internalUser       InternalUser?   @relation(fields: [internalUserId], references: [id], onDelete: SetNull)
+  organizationUser   User?           @relation(fields: [organizationUserId], references: [id], onDelete: SetNull)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([taskId])
+  @@map("task_participants")
+}
+
+model TaskComment {
+  id        String        @id @default(uuid()) @db.Uuid
+  taskId    String        @db.Uuid
+  authorId  String?       @db.Uuid
+  comment   String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  task      Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    InternalUser? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@map("task_comments")
+}
+
+model TaskRequiredData {
+  id              String                    @id @default(uuid()) @db.Uuid
+  taskId          String                    @db.Uuid
+  requiredFieldId String                    @db.Uuid
+  satisfied       Boolean                   @default(false)
+  observedValue   String?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  task            Task                      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  requiredField   TaskTemplateRequiredField @relation(fields: [requiredFieldId], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, requiredFieldId])
+  @@map("task_required_data")
+}
+
+model WorkflowTemplate {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  name               String
+  description        String?
+  active             Boolean                @default(false)
+  customerVisible    Boolean                @default(false)
+  progressBarEnabled Boolean                @default(false)
+  createdBy          String?                @db.Uuid
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  creator            InternalUser?          @relation("WorkflowTemplateCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  steps              WorkflowTemplateStep[]
+  workflows          Workflow[]
+  triggerTargets     WorkflowTrigger[]      @relation("TriggerTarget")
+  outcomeTargets     WorkflowStepOutcome[]  @relation("OutcomeWorkflowTarget")
+
+  @@map("workflow_templates")
+}
+
+model WorkflowTemplateStep {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  workflowTemplateId String                 @db.Uuid
+  taskTemplateId     String                 @db.Uuid
+  stepOrder          Int
+  friendlyName       String
+  progressBarDisplay Boolean                @default(true)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  workflowTemplate   WorkflowTemplate       @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+  taskTemplate       TaskTemplate           @relation(fields: [taskTemplateId], references: [id], onDelete: Restrict)
+  outcomes           WorkflowStepOutcome[]  @relation("OutcomeSourceStep")
+  targetOutcomes     WorkflowStepOutcome[]  @relation("OutcomeTargetStep")
+  instances          WorkflowStepInstance[]
+
+  @@unique([workflowTemplateId, stepOrder])
+  @@map("workflow_template_steps")
+}
+
+model WorkflowStepOutcome {
+  id                       String                @id @default(uuid()) @db.Uuid
+  sourceStepId             String                @db.Uuid
+  kind                     OutcomeKind
+  action                   OutcomeAction
+  targetStepId             String?               @db.Uuid
+  targetWorkflowTemplateId String?               @db.Uuid
+  targetTaskId             String?               @db.Uuid
+  targetTaskStatus         TaskStatus?
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+  sourceStep               WorkflowTemplateStep  @relation("OutcomeSourceStep", fields: [sourceStepId], references: [id], onDelete: Cascade)
+  targetStep               WorkflowTemplateStep? @relation("OutcomeTargetStep", fields: [targetStepId], references: [id], onDelete: SetNull)
+  targetWorkflowTemplate   WorkflowTemplate?     @relation("OutcomeWorkflowTarget", fields: [targetWorkflowTemplateId], references: [id], onDelete: SetNull)
+
+  @@index([sourceStepId, kind])
+  @@map("workflow_step_outcomes")
+}
+
+model Workflow {
+  id             String                  @id @default(uuid()) @db.Uuid
+  name           String
+  description    String?
+  organizationId String?                 @db.Uuid
+  templateId     String?                 @db.Uuid
+  status         WorkflowStatus          @default(NOT_STARTED)
+  currentStepId  String?                 @unique @db.Uuid
+  createdBy      String?                 @db.Uuid
+  startedAt      DateTime?
+  completedAt    DateTime?
+  failedAt       DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  organization   Organization?           @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  template       WorkflowTemplate?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  currentStep    WorkflowStepInstance?   @relation("CurrentWorkflowStep", fields: [currentStepId], references: [id], onDelete: SetNull)
+  creator        InternalUser?           @relation("WorkflowCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  steps          WorkflowStepInstance[]
+  statusHistory  WorkflowStatusHistory[]
+
+  @@index([status])
+  @@map("workflows")
+}
+
+model WorkflowStepInstance {
+  id          String               @id @default(uuid()) @db.Uuid
+  workflowId  String               @db.Uuid
+  stepId      String               @db.Uuid
+  taskId      String?              @unique @db.Uuid
+  status      WorkflowStepStatus   @default(PENDING)
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  workflow    Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  step        WorkflowTemplateStep @relation(fields: [stepId], references: [id], onDelete: Restrict)
+  task        Task?                @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  currentFor  Workflow?            @relation("CurrentWorkflowStep")
+
+  @@unique([workflowId, stepId])
+  @@map("workflow_step_instances")
+}
+
+model WorkflowTrigger {
+  id                 String              @id @default(uuid()) @db.Uuid
+  workflowTemplateId String              @db.Uuid
+  type               WorkflowTriggerType
+  organizationId     String?             @db.Uuid
+  organizationStatus String?
+  configuration      Json?
+  active             Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  workflowTemplate   WorkflowTemplate    @relation("TriggerTarget", fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([type, active])
+  @@map("workflow_triggers")
+}
+
+model OrganizationStatusHistory {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  previousStatus String?
+  newStatus      String
+  changedBy      String?       @db.Uuid
+  comment        String?
+  changedAt      DateTime      @default(now())
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  changer        InternalUser? @relation(fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, changedAt])
+  @@map("organization_status_history")
+}
+
+model TaskStatusHistory {
+  id             String        @id @default(uuid()) @db.Uuid
+  taskId         String        @db.Uuid
+  previousStatus TaskStatus?
+  newStatus      TaskStatus
+  changedBy      String?       @db.Uuid
+  comment        String?
+  changedAt      DateTime      @default(now())
+  task           Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  changer        InternalUser? @relation(fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@index([taskId, changedAt])
+  @@map("task_status_history")
+}
+
+model WorkflowStatusHistory {
+  id             String          @id @default(uuid()) @db.Uuid
+  workflowId     String          @db.Uuid
+  previousStatus WorkflowStatus?
+  newStatus      WorkflowStatus
+  changedBy      String?         @db.Uuid
+  comment        String?
+  changedAt      DateTime        @default(now())
+  workflow       Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  changer        InternalUser?   @relation(fields: [changedBy], references: [id], onDelete: SetNull)
+
+  @@index([workflowId, changedAt])
+  @@map("workflow_status_history")
+}
