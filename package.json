@@ -5,7 +5,7 @@
   "description": "NEXUS CRM and workflow management platform foundation",
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace @nexus/api\" \"npm run dev --workspace @nexus/web\"",
-    "build": "npm run build --workspace @nexus/database && npm run build --workspace @nexus/api && npm run build --workspace @nexus/web",
+    "build": "npm run generate --workspace @nexus/database && npm run build --workspace @nexus/database && npm run build --workspace @nexus/api && npm run build --workspace @nexus/web",
     "typecheck": "npm run typecheck --workspace @nexus/database && npm run build --workspace @nexus/database && npm run typecheck --workspace @nexus/api && npm run typecheck --workspace @nexus/web",
     "lint": "npm run lint --workspace @nexus/api && npm run lint --workspace @nexus/web"
   },
