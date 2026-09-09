@@ -1,28 +1,22 @@
 {
-  "name": "@nexus/api",
+  "name": "nexus",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
+  "description": "NEXUS CRM and workflow management platform foundation",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "dev": "concurrently \"npm run dev --workspace @nexus/api\" \"npm run dev --workspace @nexus/web\"",
+    "generate": "npm run generate --workspace @nexus/database",
+    "build": "npm run generate --workspace @nexus/database && npm run build --workspace @nexus/database && npm run build --workspace @nexus/api && npm run build --workspace @nexus/web",
+    "typecheck": "npm run typecheck --workspace @nexus/database && npm run build --workspace @nexus/database && npm run typecheck --workspace @nexus/api && npm run typecheck --workspace @nexus/web",
+    "lint": "npm run lint --workspace @nexus/api && npm run lint --workspace @nexus/web"
   },
-  "dependencies": {
-    "@nexus/contracts": "0.1.0",
-    "@nexus/database": "0.1.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "helmet": "^8.0.0",
-    "zod": "^3.24.1"
-  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
-    "@types/node": "^22.10.5",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "concurrently": "^9.1.2"
   }
 }
